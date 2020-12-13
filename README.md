@@ -22,7 +22,7 @@ int main() {
         // void* argument and returning nothing. You can use this pointer
         // to provide args, or to return a value, or both.
         int* intptr = (int*)malloc(sizeof(int));
-        intptr[0] = i;
+        *intptr = i;
 
         if (!POOL_exectask(&pool, nothing, intptr)) {
             // If the pool returns 0 it rejected the work because the pool was already shut down.
