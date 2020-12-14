@@ -1,26 +1,57 @@
+/***********/
+/* Mutexes */
+/***********/
+#ifndef __INCLUDED_MUTEX
+#define __INCLUDED_MUTEX
+
+// All mutex functions return 0 on success
+
+#ifdef _WIN32
+// Use windows.h if compiling for Windows
+#include <Windows.h>
+
+#define mutex_t SRWLOCK
+#define MUTEX_INITIALIZER SRWLOCK_INIT
+int mutex_init(mutex_t* mutex) {
+    InitializeSRWLock(mutex);
+    return 0;
+}
+int mutex_lock(mutex_t* mutex) {
+    AcquireSRWLockExclusive(mutex);
+    return 0;
+}
+int mutex_unlock(mutex_t* mutex) {
+    ReleaseSRWLockExclusive(mutex);
+    return 0;
+}
+int mutex_destroy(mutex_t* mutex) { return 0; }
+
+#else
+// On other platforms use <pthread.h>
+#include <pthread.h>
+
+#define mutex_t pthread_mutex_t
+#define MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
+int mutex_init(mutex_t* mutex) { return pthread_mutex_init(mutex, NULL); }
+int mutex_lock(mutex_t* mutex) { return pthread_mutex_lock(mutex); }
+int mutex_unlock(mutex_t* mutex) { return pthread_mutex_unlock(mutex); }
+int mutex_destroy(mutex_t* mutex) { return pthread_mutex_destroy(mutex); }
+#endif
+
+#endif  // End mutex include guard
+
 #ifndef THREADPOOL
 #define THREADPOOL
 
-#include <pthread.h>
-#include <sched.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
+
+#define POOL_CRITICAL_BEGIN mutex_lock(&(pool->pool_mutex));
+#define POOL_CRITICAL_END mutex_unlock(&(pool->pool_mutex));
 
 /**********************/
 /* Struct definitions */
 /**********************/
-
-#define POOL_CRITICAL_BEGIN                             \
-    if (pthread_mutex_lock(&(pool->pool_mutex)) != 0) { \
-        perror("mutex_lock");                           \
-        exit(1);                                        \
-    };
-#define POOL_CRITICAL_END                                 \
-    if (pthread_mutex_unlock(&(pool->pool_mutex)) != 0) { \
-        perror("mutex_unlock");                           \
-        exit(1);                                          \
-    };
 
 struct TaskStack;
 typedef struct TaskStack TaskStack;
@@ -31,7 +62,7 @@ struct TaskStack {
 };
 
 struct Threadpool {
-    pthread_mutex_t pool_mutex;
+    mutex_t pool_mutex;
     TaskStack* task_stack;
     size_t num_threads;
     size_t num_threads_running;
@@ -50,7 +81,7 @@ static void* await_and_do_tasks(void* pool_arg);
 extern void
 POOL_create(Threadpool* pool, size_t num_threads) {
     // Initialize the pool
-    static pthread_mutex_t pmut_init = PTHREAD_MUTEX_INITIALIZER;
+    static mutex_t pmut_init = MUTEX_INITIALIZER;
     pool->pool_mutex = pmut_init;
     pool->task_stack = NULL;
     pool->is_shutdown = false;
@@ -59,12 +90,11 @@ POOL_create(Threadpool* pool, size_t num_threads) {
     pool->num_threads_running = num_threads;
     pool->threads = (pthread_t*)malloc(num_threads * sizeof(pthread_t));
 
-    // Spin threads to wrap on the spinlock.
+    // Spin threads. They wrap on the spinlock doing work until the pool is
+    // shut down. They detach themselves and do not need to be joined.
     for (size_t i = 0; i < num_threads; i++) {
         pthread_create(&(pool->threads[i]), NULL, await_and_do_tasks, pool);
     }
-
-    // These tasks detach themselves and do not need to be joined.
 }
 
 // Do not exec tasks in the pool before it is created or after it is destroyed.
@@ -170,7 +200,7 @@ POOL_destroy(Threadpool* pool) {
 
     // Now the pool is completely finished and all threads are joined.
     // Tear down the last remaining resources we're using.
-    pthread_mutex_destroy(&(pool->pool_mutex));
+    mutex_destroy(&(pool->pool_mutex));
     free(pool->threads);
 }
 
