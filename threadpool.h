@@ -46,8 +46,8 @@ int mutex_destroy(mutex_t* mutex) { return pthread_mutex_destroy(mutex); }
 #include <stdbool.h>
 #include <stdlib.h>
 
-#define POOL_CRITICAL_BEGIN mutex_lock(&(pool->pool_mutex));
-#define POOL_CRITICAL_END mutex_unlock(&(pool->pool_mutex));
+#define Threadpool_CRITICAL_BEGIN mutex_lock(&(pool->pool_mutex));
+#define Threadpool_CRITICAL_END mutex_unlock(&(pool->pool_mutex));
 
 /**********************/
 /* Struct definitions */
@@ -79,7 +79,7 @@ static void* await_and_do_tasks(void* pool_arg);
 
 // Create the pool before you add tasks to it. Then destroy it once you're done.
 extern void
-POOL_create(Threadpool* pool, size_t num_threads) {
+Threadpool_create(Threadpool* pool, size_t num_threads) {
     // Initialize the pool
     static mutex_t pmut_init = MUTEX_INITIALIZER;
     pool->pool_mutex = pmut_init;
@@ -101,9 +101,9 @@ POOL_create(Threadpool* pool, size_t num_threads) {
 // Do not exec a task that will not finish.
 // Returns true on success, false on failure. Fails when pool is already shut down.
 extern bool
-POOL_exectask(Threadpool* pool, void (*task_fn)(void* args), void* task_args) {
+Threadpool_exectask(Threadpool* pool, void (*task_fn)(void* args), void* task_args) {
     // Put the thread in the pool so that it can be consumed.
-    POOL_CRITICAL_BEGIN;
+    Threadpool_CRITICAL_BEGIN;
     {
         // Fails if already shut down
         if (pool->is_shutdown) {
@@ -120,7 +120,7 @@ POOL_exectask(Threadpool* pool, void (*task_fn)(void* args), void* task_args) {
         work->next = pool->task_stack;
         pool->task_stack = work;
     }
-    POOL_CRITICAL_END;
+    Threadpool_CRITICAL_END;
 
     return 1;
 }
@@ -137,13 +137,13 @@ static void* await_and_do_tasks(void* pool_arg) {
         TaskStack* work = NULL;
 
         /* Critical section */
-        POOL_CRITICAL_BEGIN;
+        Threadpool_CRITICAL_BEGIN;
         {
             // Join self when the pool shuts down,
             // making sure to end the critical section.
             if (pool->is_shutdown && pool->task_stack == NULL) {
                 pool->num_threads_running--;
-                POOL_CRITICAL_END;
+                Threadpool_CRITICAL_END;
                 return NULL;
             }
 
@@ -155,7 +155,7 @@ static void* await_and_do_tasks(void* pool_arg) {
                 pool->task_stack = work->next;
             }
         }
-        POOL_CRITICAL_END;
+        Threadpool_CRITICAL_END;
 
         if (work) {
             // Extract the work and args
@@ -173,27 +173,27 @@ static void* await_and_do_tasks(void* pool_arg) {
 
 // Only destroy once, and not before the threadpool is created.
 extern void
-POOL_destroy(Threadpool* pool) {
-    POOL_CRITICAL_BEGIN;
+Threadpool_destroy(Threadpool* pool) {
+    Threadpool_CRITICAL_BEGIN;
     pool->is_shutdown = true;
-    POOL_CRITICAL_END;
+    Threadpool_CRITICAL_END;
 
     // Wait for the task stack to be consumed.
     bool waiting = true;
     while (waiting) {
         sched_yield();
 
-        POOL_CRITICAL_BEGIN;
+        Threadpool_CRITICAL_BEGIN;
         waiting = pool->task_stack;
-        POOL_CRITICAL_END;
+        Threadpool_CRITICAL_END;
     }
 
     // Wait for the tasks to finish running
     waiting = true;
     while (waiting) {
-        POOL_CRITICAL_BEGIN;
+        Threadpool_CRITICAL_BEGIN;
         waiting = pool->num_threads_running;
-        POOL_CRITICAL_END;
+        Threadpool_CRITICAL_END;
 
         sched_yield();
     }

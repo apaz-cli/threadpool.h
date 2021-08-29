@@ -15,7 +15,7 @@ void nothing(void* voidptr) {
 int main() {
     Threadpool pool;
 
-    POOL_create(&pool, 8);
+    Threadpool_create(&pool, 8);
 
     for (int i = 0; i < 5000; i++) {
         // Executes a task in the form of a function pointer accepting one
@@ -24,7 +24,7 @@ int main() {
         int* intptr = (int*)malloc(sizeof(int));
         *intptr = i;
 
-        if (!POOL_exectask(&pool, nothing, intptr)) {
+        if (!Threadpool_exectask(&pool, nothing, intptr)) {
             // If the pool returns 0 it rejected the work because the pool was already shut down.
             // It can never happen in this example, but if it's at all possible (such as if you
             // could shut down and then add tasks, or if shutting down and adding tasks are
@@ -35,7 +35,7 @@ int main() {
         }
     }
 
-    POOL_destroy(&pool);
+    Threadpool_destroy(&pool);
 }
 ```
 
